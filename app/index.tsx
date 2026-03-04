@@ -1,7 +1,9 @@
 import { Text, TextInput, View } from "react-native";
 
+
 export default function Index() {
   return (
+    <View>
       <View
         style={{
           flex: 1,
@@ -21,6 +23,6 @@ export default function Index() {
           margin: 10,
         }}
       />
-   
+   </View>
   );
 }
