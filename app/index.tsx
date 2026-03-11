@@ -13,7 +13,7 @@ export default function Index() {
     <View>
       <View style={{ alignItems: 'center', justifyContent: 'center' }}>
         <TextInput
-          placeholder="User ID"
+          placeholder="Subject ID"
           style={{
             height: 40,
             width: 200,
@@ -56,6 +56,23 @@ export default function Index() {
           }}
         >
           <Text style={{ color: 'white', fontSize: 20 }}>Open Camera</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 300 }}>
+        {/* Temporary Button */}
+        <TouchableOpacity
+          onPress={() => router.push('/testOutput')}
+          style={{
+            marginTop: 20,
+            backgroundColor: '#564bf5',
+            padding: 12,
+            borderRadius: 8,
+            width: 200,
+            alignItems: 'center',
+          }}
+        >
+          <Text style={{ color: 'white', fontSize: 20 }}>Temporary</Text>
         </TouchableOpacity>
       </View>
 
