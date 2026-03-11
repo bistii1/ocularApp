@@ -37,7 +37,9 @@
           "dark": {
             "backgroundColor": "#000000"
           }
-        },
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Allow ocular_app to access your camera."
