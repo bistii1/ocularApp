@@ -1,5 +1,6 @@
+import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Switch, Text, TextInput, View } from "react-native";
+import { Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 
 export default function Index() {
@@ -7,6 +8,7 @@ export default function Index() {
   const toggleSwitch = () => setIsEnabled(previousState => !previousState);
   const leftEyeText = 'Left Eye';
   const rightEyeText = 'Right Eye';
+  const router = useRouter();
 
   return (
     <View>
@@ -30,6 +32,22 @@ export default function Index() {
           value={isEnabled}
         />
       <Text style={isEnabled ? { color: 'black' } : { color: '#767577' }}>{rightEyeText}</Text>
+
+      {/* Camera Button */}
+      <TouchableOpacity
+        onPress={() => router.push('/camera')}
+        style={{
+          marginTop: 20,
+          marginLeft: 10,
+          backgroundColor: '#564bf5',
+          padding: 12,
+          borderRadius: 8,
+          width: 200,
+          alignItems: 'center',
+        }}
+      >
+        <Text style={{ color: 'white', fontSize: 16 }}>Open Camera</Text>
+      </TouchableOpacity>
    </View>
    
   );
