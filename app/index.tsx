@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { Button, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { useRouter } from "expo-router";
+import { useState } from "react";
+import { Button, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 
 export default function Index() {
@@ -7,28 +8,7 @@ export default function Index() {
   const toggleSwitch = () => setIsEnabled(previousState => !previousState);
   const leftEyeText = 'Left Eye';
   const rightEyeText = 'Right Eye';
-  const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    marginHorizontal: 16,
-  },
-  title: {
-    textAlign: 'center',
-    marginVertical: 8,
-  },
-  button: {
-    justifyContent: 'center',
-    marginTop: 16,
-    fontSize: 28,
-  },
-  separator: {
-    marginVertical: 8,
-    borderBottomColor: '#737373',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-});
-
+  const router = useRouter();
 
   return (
     <View>
@@ -62,8 +42,54 @@ export default function Index() {
           onPress={() => console.log('Button pressed')}
         />
       </View>
+      <Text style={isEnabled ? { color: '#767577' } : { color: 'black' }}>{leftEyeText}</Text>
+      <Switch
+          ios_backgroundColor="#b0afb0"
+          trackColor={{false: '#b0afb0', true: '#b0afb0'}}
+          thumbColor={isEnabled ? '#564bf5' : '#564bf5'}
+          onValueChange={toggleSwitch}
+          value={isEnabled}
+        />
+      <Text style={isEnabled ? { color: 'black' } : { color: '#767577' }}>{rightEyeText}</Text>
+
+      {/* Camera Button */}
+      <TouchableOpacity
+        onPress={() => router.push('/camera')}
+        style={{
+          marginTop: 20,
+          marginLeft: 10,
+          backgroundColor: '#564bf5',
+          padding: 12,
+          borderRadius: 8,
+          width: 200,
+          alignItems: 'center',
+        }}
+      >
+        <Text style={{ color: 'white', fontSize: 16 }}>Open Camera</Text>
+      </TouchableOpacity>
    </View>
 
   );
 
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    marginHorizontal: 16,
+  },
+  title: {
+    textAlign: 'center',
+    marginVertical: 8,
+  },
+  button: {
+    justifyContent: 'center',
+    marginTop: 16,
+  },
+  separator: {
+    marginVertical: 8,
+    borderBottomColor: '#737373',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+});
