@@ -75,6 +75,7 @@ export default function CameraScreen() {
     // Step 4: Flash OFF
     setTorchOn(false);
     setSequenceStatus('Done');
+    await sleep(1500);
 
     // Stop recording
     if (cameraRef.current) {
