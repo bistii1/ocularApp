@@ -7,6 +7,9 @@ export default function CameraScreen() {
   const [flash, setFlash] = useState<'off' | 'on' | 'auto'>('off');
   const [permission, requestPermission] = useCameraPermissions();
   const [isRecording, setIsRecording] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [sequenceStatus, setSequenceStatus] = useState<string>('');
   const cameraRef = useRef<CameraView>(null);
 
   if (!permission) return <View />;
@@ -26,6 +29,10 @@ export default function CameraScreen() {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
   }
 
+  function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
   function toggleFlash() {
     setFlash(current => {
       if (current === 'off') return 'on';
@@ -34,25 +41,47 @@ export default function CameraScreen() {
     });
   }
 
-  async function startRecording() {
-    if (cameraRef.current) {
-      setIsRecording(true);
-      try {
-        const video = await cameraRef.current.recordAsync();
-        console.log('Video saved to:', video?.uri);
-        // video.uri is the local file path — you can upload or display it from here
-      } catch (e) {
-        console.error('Recording error:', e);
-      } finally {
-        setIsRecording(false);
-      }
-    }
-  }
+  async function runSequence() {
+    // Countdown: 2 seconds
+    setCountdown(2);
+    await sleep(1000);
+    setCountdown(1);
+    await sleep(1000);
+    setCountdown(null);
 
-  function stopRecording() {
+    // Start recording
+    setIsRecording(true);
+    if (cameraRef.current) {
+      cameraRef.current.recordAsync().then(video => {
+        console.log('Video saved to:', video?.uri);
+      });
+    }
+
+    // Step 1: Flash ON for 3 seconds
+    setSequenceStatus('Flash 1');
+    setTorchOn(true);
+    await sleep(3000);
+
+    // Step 2: Flash OFF for 3 seconds
+    setSequenceStatus('Waiting...');
+    setTorchOn(false);
+    await sleep(3000);
+
+    // Step 3: Flash ON for 0.25 seconds
+    setSequenceStatus('Flash 2');
+    setTorchOn(true);
+    await sleep(250);
+
+    // Step 4: Flash OFF
+    setTorchOn(false);
+    setSequenceStatus('Done');
+
+    // Stop recording
     if (cameraRef.current) {
       cameraRef.current.stopRecording();
     }
+    setIsRecording(false);
+    setSequenceStatus('');
   }
 
   return (
@@ -62,20 +91,37 @@ export default function CameraScreen() {
         facing={facing}
         flash={flash}
         ref={cameraRef}
+        enableTorch={torchOn}
         mode="video"
       >
-        <View style={styles.controls}>
-          {/* Flash toggle */}
-          <TouchableOpacity style={styles.button} onPress={toggleFlash}>
-            <Text style={styles.text}>
-              Flash: {flash.toUpperCase()}
-            </Text>
-          </TouchableOpacity>
+        {/* Countdown overlay */}
+        {countdown !== null && (
+          <View style={styles.countdownContainer}>
+            <Text style={styles.countdownText}>{countdown}</Text>
+          </View>
+        )}
 
-          {/* Record button */}
+        {/* Recording indicator */}
+        {isRecording && (
+          <View style={styles.recordingIndicator}>
+            <View style={styles.recordingDot} />
+            <Text style={styles.recordingText}>REC</Text>
+          </View>
+        )}
+
+        {/* Sequence status */}
+        {sequenceStatus !== '' && (
+          <View style={styles.statusContainer}>
+            <Text style={styles.statusText}>{sequenceStatus}</Text>
+          </View>
+        )}
+
+        <View style={styles.controls}>
+          {/* Start button */}
           <TouchableOpacity
             style={[styles.captureButton, isRecording && styles.captureButtonRecording]}
-            onPress={isRecording ? stopRecording : startRecording}
+            onPress={runSequence}
+            disabled={isRecording || countdown !== null}
           >
             <View style={[styles.captureInner, isRecording && styles.captureInnerRecording]} />
           </TouchableOpacity>
@@ -84,14 +130,10 @@ export default function CameraScreen() {
           <TouchableOpacity style={styles.button} onPress={toggleCameraFacing}>
             <Text style={styles.text}>Flip</Text>
           </TouchableOpacity>
+
+          {/* Placeholder to balance layout */}
+          <View style={styles.button} />
         </View>
-        {/* Recording indicator */}
-        {isRecording && (
-          <View style={styles.recordingIndicator}>
-            <View style={styles.recordingDot} />
-            <Text style={styles.recordingText}>REC</Text>
-          </View>
-        )}
       </CameraView>
     </View>
   );
@@ -141,6 +183,18 @@ const styles = StyleSheet.create({
     height: 30,
     backgroundColor: 'white',
   },
+  countdownContainer: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  countdownText: {
+    fontSize: 120,
+    fontWeight: 'bold',
+    color: 'white',
+  },
   recordingIndicator: {
     position: 'absolute',
     top: 40,
@@ -158,8 +212,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'red',
     marginRight: 6,
   },
-  recordingText: {
-    color: 'white',
-    fontWeight: 'bold',
+  recordingText: { color: 'white', fontWeight: 'bold' },
+  statusContainer: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 8,
+    borderRadius: 8,
   },
+  statusText: { color: 'white', fontWeight: 'bold' },
 });
