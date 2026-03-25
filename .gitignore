@@ -41,3 +41,8 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Backend artifacts
+backend/recordings/
+backend/validation_output/
+backend/__pycache__/
