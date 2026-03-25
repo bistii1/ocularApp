@@ -6,12 +6,11 @@ export default function CameraScreen() {
   const [facing, setFacing] = useState<CameraType>('back');
   const [flash, setFlash] = useState<'off' | 'on' | 'auto'>('off');
   const [permission, requestPermission] = useCameraPermissions();
+  const [isRecording, setIsRecording] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
-  // Permission not yet determined
   if (!permission) return <View />;
 
-  // Permission denied — prompt user
   if (!permission.granted) {
     return (
       <View style={styles.container}>
@@ -35,11 +34,24 @@ export default function CameraScreen() {
     });
   }
 
-  async function takePicture() {
+  async function startRecording() {
     if (cameraRef.current) {
-      const photo = await cameraRef.current.takePictureAsync();
-      console.log('Photo taken:', photo.uri);
-      // Handle the photo (save, upload, display, etc.)
+      setIsRecording(true);
+      try {
+        const video = await cameraRef.current.recordAsync();
+        console.log('Video saved to:', video?.uri);
+        // video.uri is the local file path — you can upload or display it from here
+      } catch (e) {
+        console.error('Recording error:', e);
+      } finally {
+        setIsRecording(false);
+      }
+    }
+  }
+
+  function stopRecording() {
+    if (cameraRef.current) {
+      cameraRef.current.stopRecording();
     }
   }
 
@@ -50,6 +62,7 @@ export default function CameraScreen() {
         facing={facing}
         flash={flash}
         ref={cameraRef}
+        mode="video"
       >
         <View style={styles.controls}>
           {/* Flash toggle */}
@@ -59,9 +72,12 @@ export default function CameraScreen() {
             </Text>
           </TouchableOpacity>
 
-          {/* Capture button */}
-          <TouchableOpacity style={styles.captureButton} onPress={takePicture}>
-            <View style={styles.captureInner} />
+          {/* Record button */}
+          <TouchableOpacity
+            style={[styles.captureButton, isRecording && styles.captureButtonRecording]}
+            onPress={isRecording ? stopRecording : startRecording}
+          >
+            <View style={[styles.captureInner, isRecording && styles.captureInnerRecording]} />
           </TouchableOpacity>
 
           {/* Flip camera */}
@@ -69,6 +85,13 @@ export default function CameraScreen() {
             <Text style={styles.text}>Flip</Text>
           </TouchableOpacity>
         </View>
+        {/* Recording indicator */}
+        {isRecording && (
+          <View style={styles.recordingIndicator}>
+            <View style={styles.recordingDot} />
+            <Text style={styles.recordingText}>REC</Text>
+          </View>
+        )}
       </CameraView>
     </View>
   );
@@ -101,6 +124,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  captureButtonRecording: {
+    backgroundColor: 'red',
+  },
   captureInner: {
     width: 60,
     height: 60,
@@ -108,5 +134,32 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderWidth: 2,
     borderColor: '#ccc',
+  },
+  captureInnerRecording: {
+    borderRadius: 8,
+    width: 30,
+    height: 30,
+    backgroundColor: 'white',
+  },
+  recordingIndicator: {
+    position: 'absolute',
+    top: 40,
+    left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 8,
+    borderRadius: 8,
+  },
+  recordingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'red',
+    marginRight: 6,
+  },
+  recordingText: {
+    color: 'white',
+    fontWeight: 'bold',
   },
 });
