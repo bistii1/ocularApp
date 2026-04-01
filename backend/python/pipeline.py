@@ -506,10 +506,13 @@ def _dilation_correlate(ref, cur, spt_win, fmc_win, x_lp, y_lp,
 
 def _compute_metrics(disp_s_inst, t_vect, win_size, fps):
     """
-    From the dilation rate time series, compute:
-      - latency (onset time)
-      - percent change (max constriction)
-      - min/max pupil diameter estimates
+    Extract full set of pupillometry metrics matching MATLAB output:
+      - Onset / latency
+      - Peak constriction time and magnitude
+      - Recovery time (75% recovery)
+      - Average constriction and dilation velocities
+      - Pupil diameter estimates
+      - Full time series
     """
     filtered = median_filter(disp_s_inst, size=5)
 
@@ -524,28 +527,77 @@ def _compute_metrics(disp_s_inst, t_vect, win_size, fps):
     dilation_ratio = (dilate_max_rad / dilate_min_rad) ** (
         -np.cumsum(dilation_vel) / (win_size / 2)
     )
-
     dilation_ratio = np.clip(dilation_ratio, 0.01, 10.0)
 
-    approx_pupil_mm = 4.0  # average pupil ~4mm baseline
+    # Velocity as percent change per frame
+    velocity_pct = (1 - (dilate_max_rad / dilate_min_rad) ** (
+        (-dilation_vel * 2) / win_size
+    )) * 100
 
+    approx_pupil_mm = 4.0
+
+    # --- Onset detection ---
+    onset_idx = _find_onset(dilation_vel, fps)
+    onset_time = float(t_vect[onset_idx]) if onset_idx is not None else 0.0
+
+    # --- Peak constriction (minimum dilation ratio within first 2.5s) ---
+    search_end = min(len(dilation_ratio), int(2.5 * fps))
+    if search_end < 2:
+        search_end = len(dilation_ratio)
+    constrict_idx = int(np.argmin(dilation_ratio[:search_end]))
+    peak_constriction_time = float(t_vect[constrict_idx])
+    max_constriction_ratio = abs(1.0 - float(dilation_ratio[constrict_idx])) * 100
+
+    # --- Recovery time (75% return from constriction) ---
+    recovery_time = None
+    if onset_idx is not None and constrict_idx > 0:
+        baseline = float(dilation_ratio[max(0, onset_idx - 1)]) if onset_idx > 0 else 1.0
+        trough = float(dilation_ratio[constrict_idx])
+        recovery_threshold = trough + 0.75 * abs(baseline - trough)
+        for ri in range(constrict_idx, len(dilation_ratio)):
+            if dilation_ratio[ri] >= recovery_threshold:
+                recovery_time = float(t_vect[ri])
+                break
+    if recovery_time is None and len(t_vect) > constrict_idx:
+        post_peak = dilation_ratio[constrict_idx:]
+        recovery_time = float(t_vect[constrict_idx + int(np.argmax(post_peak))])
+
+    # --- Average velocities ---
+    start = onset_idx if onset_idx is not None else 0
+    avg_constriction_vel = float(np.mean(velocity_pct[start:constrict_idx + 1])) if constrict_idx > start else 0.0
+    recovery_end = min(len(velocity_pct), int(recovery_time * fps)) if recovery_time else len(velocity_pct)
+    avg_dilation_vel = float(np.mean(velocity_pct[constrict_idx + 1:recovery_end])) if recovery_end > constrict_idx + 1 else 0.0
+
+    # --- Diameter estimates ---
     min_ratio = float(np.nanmin(dilation_ratio))
     max_ratio = float(np.nanmax(dilation_ratio))
-
-    percent_change = abs(1 - min_ratio) * 100
-
-    onset_idx = _find_onset(dilation_vel, fps)
-    latency = float(t_vect[onset_idx]) if onset_idx is not None else 0.0
-
     min_diameter = min_ratio * approx_pupil_mm
     max_diameter = max_ratio * approx_pupil_mm
 
     return {
-        "latency_s": round(latency, 3),
-        "percent_change": round(percent_change, 2),
+        # Timing metrics
+        "onset_time_s": round(onset_time, 3),
+        "peak_constriction_time_s": round(peak_constriction_time, 3),
+        "recovery_time_s": round(recovery_time, 3) if recovery_time else None,
+        # Magnitude metrics
+        "max_constriction_pct": round(max_constriction_ratio, 2),
+        "percent_change": round(abs(1 - min_ratio) * 100, 2),
+        # Velocity metrics
+        "avg_constriction_velocity": round(avg_constriction_vel, 3),
+        "avg_dilation_velocity": round(avg_dilation_vel, 3),
+        # Diameter estimates
         "min_pupil_diameter_mm": round(min_diameter, 2),
         "max_pupil_diameter_mm": round(max_diameter, 2),
+        "baseline_pupil_diameter_mm": approx_pupil_mm,
+        # Processing info
+        "n_frames": len(t_vect),
+        "fps": round(fps, 1),
+        "analysis_duration_s": round(float(t_vect[-1] - t_vect[0]), 2),
+        # Legacy (kept for backward compat)
+        "latency_s": round(onset_time, 3),
+        # Time series
         "dilation_time_series": dilation_ratio.tolist(),
+        "velocity_time_series": velocity_pct.tolist(),
         "time_vector": t_vect.tolist(),
     }
 

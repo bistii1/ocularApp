@@ -32,12 +32,31 @@ app.add_middleware(
 
 
 class AnalysisResult(BaseModel):
-    latency_s: float
+    # Timing
+    onset_time_s: float
+    peak_constriction_time_s: float
+    recovery_time_s: Optional[float] = None
+    # Magnitude
+    max_constriction_pct: float
     percent_change: float
+    # Velocity
+    avg_constriction_velocity: float
+    avg_dilation_velocity: float
+    # Diameter
     min_pupil_diameter_mm: float
     max_pupil_diameter_mm: float
+    baseline_pupil_diameter_mm: float
+    # Processing info
+    n_frames: int
+    fps: float
+    analysis_duration_s: float
+    # Legacy
+    latency_s: float
+    # Time series
     dilation_time_series: List[float]
+    velocity_time_series: List[float]
     time_vector: List[float]
+    # Metadata
     subject_id: Optional[str] = None
     eye: Optional[str] = None
     engine: str = "python"

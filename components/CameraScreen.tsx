@@ -128,13 +128,9 @@ export default function CameraScreen() {
       router.replace({
         pathname: '/testOutput',
         params: {
-          latency: String(result.latency_s),
-          percentChange: String(result.percent_change),
-          minDiameter: String(result.min_pupil_diameter_mm),
-          maxDiameter: String(result.max_pupil_diameter_mm),
+          resultJson: JSON.stringify(result),
           subjectId: params.subjectId || '',
           eye: params.eye || '',
-          engine: result.engine,
         },
       });
     } catch (error: any) {

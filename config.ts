@@ -8,12 +8,31 @@ const SERVER_IP = '10.186.191.98';
 export const API_BASE_URL = `http://${SERVER_IP}:8000`;
 
 export interface AnalysisResult {
-  latency_s: number;
+  // Timing
+  onset_time_s: number;
+  peak_constriction_time_s: number;
+  recovery_time_s: number | null;
+  // Magnitude
+  max_constriction_pct: number;
   percent_change: number;
+  // Velocity
+  avg_constriction_velocity: number;
+  avg_dilation_velocity: number;
+  // Diameter
   min_pupil_diameter_mm: number;
   max_pupil_diameter_mm: number;
+  baseline_pupil_diameter_mm: number;
+  // Processing info
+  n_frames: number;
+  fps: number;
+  analysis_duration_s: number;
+  // Legacy
+  latency_s: number;
+  // Time series
   dilation_time_series: number[];
+  velocity_time_series: number[];
   time_vector: number[];
+  // Metadata
   subject_id: string | null;
   eye: string | null;
   engine: string;
@@ -38,8 +57,6 @@ export async function analyzeVideo(
   if (eye) formData.append('eye', eye);
   formData.append('engine', engine);
 
-  // Do NOT set Content-Type manually -- React Native must auto-generate
-  // the multipart boundary in the header
   const response = await fetch(`${API_BASE_URL}/api/analyze`, {
     method: 'POST',
     body: formData,
