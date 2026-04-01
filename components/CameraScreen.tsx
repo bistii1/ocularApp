@@ -1,26 +1,42 @@
-import { CameraType, CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Button, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Button, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { analyzeVideo } from '../config';
 
 export default function CameraScreen() {
-  const [facing, setFacing] = useState<CameraType>('back');
-  const [flash, setFlash] = useState<'off' | 'on' | 'auto'>('off');
-  const [permission, requestPermission] = useCameraPermissions();
+  const [facing, setFacing] = useState<CameraType>('front');
+  const [camPermission, requestCamPermission] = useCameraPermissions();
+  const [micPermission, requestMicPermission] = useMicrophonePermissions();
   const [isRecording, setIsRecording] = useState(false);
-  const [torchOn, setTorchOn] = useState(false);
+  const [screenFlash, setScreenFlash] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
-  const [sequenceStatus, setSequenceStatus] = useState<string>('');
+  const [sequenceStatus, setSequenceStatus] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
   const cameraRef = useRef<CameraView>(null);
+  const router = useRouter();
+  const params = useLocalSearchParams<{ subjectId?: string; eye?: string }>();
 
-  if (!permission) return <View />;
+  const isFront = facing === 'front';
 
-  if (!permission.granted) {
+  // Gate on both camera and microphone permissions
+  if (!camPermission || !micPermission) return <View style={styles.container} />;
+
+  if (!camPermission.granted || !micPermission.granted) {
     return (
-      <View style={styles.container}>
+      <View style={styles.permissionContainer}>
         <Text style={styles.message}>
-          We need camera permission to continue.
+          Camera and microphone permissions are required to record video.
         </Text>
-        <Button onPress={requestPermission} title="Grant Permission" />
+        {!camPermission.granted && (
+          <Button onPress={requestCamPermission} title="Grant Camera Permission" />
+        )}
+        {!micPermission.granted && (
+          <View style={{ marginTop: 12 }}>
+            <Button onPress={requestMicPermission} title="Grant Microphone Permission" />
+          </View>
+        )}
       </View>
     );
   }
@@ -33,117 +49,194 @@ export default function CameraScreen() {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  function toggleFlash() {
-    setFlash(current => {
-      if (current === 'off') return 'on';
-      if (current === 'on') return 'auto';
-      return 'off';
-    });
-  }
-
   async function runSequence() {
-    // Countdown: 2 seconds
+    setErrorMsg('');
+
+    // Countdown
     setCountdown(2);
     await sleep(1000);
     setCountdown(1);
     await sleep(1000);
     setCountdown(null);
 
-    // Start recording
+    // Start recording in parallel -- wrapped in try/catch so the flash
+    // sequence always runs even if recording fails
     setIsRecording(true);
-    if (cameraRef.current) {
-      cameraRef.current.recordAsync().then(video => {
-        console.log('Video saved to:', video?.uri);
-      });
+    let videoUri: string | undefined;
+    let recordPromise: Promise<void> | null = null;
+
+    try {
+      if (cameraRef.current) {
+        recordPromise = cameraRef.current
+          .recordAsync()
+          .then(video => {
+            videoUri = video?.uri;
+            console.log('Video saved to:', video?.uri);
+          })
+          .catch(err => {
+            console.warn('recordAsync rejected:', err);
+          });
+      }
+    } catch (err: any) {
+      console.warn('recordAsync threw:', err);
     }
 
-    // Step 1: Flash ON for 3 seconds
+    // === Flash sequence (always runs) ===
     setSequenceStatus('Flash 1');
-    setTorchOn(true);
+    setScreenFlash(true);
     await sleep(3000);
 
-    // Step 2: Flash OFF for 3 seconds
     setSequenceStatus('Waiting...');
-    setTorchOn(false);
+    setScreenFlash(false);
     await sleep(3000);
 
-    // Step 3: Flash ON for 0.25 seconds
     setSequenceStatus('Flash 2');
-    setTorchOn(true);
+    setScreenFlash(true);
     await sleep(250);
 
-    // Step 4: Flash OFF
-    setTorchOn(false);
+    setScreenFlash(false);
     setSequenceStatus('Done');
     await sleep(1500);
 
     // Stop recording
-    if (cameraRef.current) {
-      cameraRef.current.stopRecording();
+    try {
+      cameraRef.current?.stopRecording();
+    } catch (err: any) {
+      console.warn('stopRecording error:', err);
     }
     setIsRecording(false);
     setSequenceStatus('');
+
+    // Wait for recording to finish saving
+    if (recordPromise) {
+      await recordPromise;
+    }
+
+    if (videoUri) {
+      await processVideo(videoUri);
+    } else {
+      setErrorMsg('No video captured. Check camera/microphone permissions and try again.');
+    }
+  }
+
+  async function processVideo(uri: string) {
+    setIsProcessing(true);
+    setSequenceStatus('Uploading & analyzing...');
+
+    try {
+      const result = await analyzeVideo(uri, params.subjectId, params.eye);
+      router.replace({
+        pathname: '/testOutput',
+        params: {
+          latency: String(result.latency_s),
+          percentChange: String(result.percent_change),
+          minDiameter: String(result.min_pupil_diameter_mm),
+          maxDiameter: String(result.max_pupil_diameter_mm),
+          subjectId: params.subjectId || '',
+          eye: params.eye || '',
+          engine: result.engine,
+        },
+      });
+    } catch (error: any) {
+      console.error('Analysis error:', error);
+      setErrorMsg(`Analysis failed: ${error.message}`);
+      setSequenceStatus('');
+    } finally {
+      setIsProcessing(false);
+    }
   }
 
   return (
     <View style={styles.container}>
+      {/* Camera -- no children allowed */}
       <CameraView
         style={styles.camera}
         facing={facing}
-        flash={flash}
         ref={cameraRef}
-        enableTorch={torchOn}
+        enableTorch={!isFront && screenFlash}
         mode="video"
-      >
-        {/* Countdown overlay */}
-        {countdown !== null && (
-          <View style={styles.countdownContainer}>
-            <Text style={styles.countdownText}>{countdown}</Text>
-          </View>
-        )}
+      />
 
-        {/* Recording indicator */}
-        {isRecording && (
-          <View style={styles.recordingIndicator}>
-            <View style={styles.recordingDot} />
-            <Text style={styles.recordingText}>REC</Text>
-          </View>
-        )}
+      {/* Screen flash stimulus (front camera only) */}
+      {screenFlash && isFront && (
+        <View style={styles.screenFlash} pointerEvents="none" />
+      )}
 
-        {/* Sequence status */}
-        {sequenceStatus !== '' && (
-          <View style={styles.statusContainer}>
-            <Text style={styles.statusText}>{sequenceStatus}</Text>
-          </View>
-        )}
-
-        <View style={styles.controls}>
-          {/* Start button */}
-          <TouchableOpacity
-            style={[styles.captureButton, isRecording && styles.captureButtonRecording]}
-            onPress={runSequence}
-            disabled={isRecording || countdown !== null}
-          >
-            <View style={[styles.captureInner, isRecording && styles.captureInnerRecording]} />
-          </TouchableOpacity>
-
-          {/* Flip camera */}
-          <TouchableOpacity style={styles.button} onPress={toggleCameraFacing}>
-            <Text style={styles.text}>Flip</Text>
-          </TouchableOpacity>
-
-          {/* Placeholder to balance layout */}
-          <View style={styles.button} />
+      {/* Countdown */}
+      {countdown !== null && (
+        <View style={styles.countdownContainer} pointerEvents="none">
+          <Text style={styles.countdownText}>{countdown}</Text>
         </View>
-      </CameraView>
+      )}
+
+      {/* Recording indicator */}
+      {isRecording && !screenFlash && (
+        <View style={styles.recordingIndicator} pointerEvents="none">
+          <View style={styles.recordingDot} />
+          <Text style={styles.recordingText}>REC</Text>
+        </View>
+      )}
+
+      {/* Processing overlay */}
+      {isProcessing && (
+        <View style={styles.processingOverlay}>
+          <ActivityIndicator size="large" color="#564bf5" />
+          <Text style={styles.processingText}>Analyzing pupil response...</Text>
+        </View>
+      )}
+
+      {/* Sequence status */}
+      {sequenceStatus !== '' && !isProcessing && !screenFlash && (
+        <View style={styles.statusContainer} pointerEvents="none">
+          <Text style={styles.statusText}>{sequenceStatus}</Text>
+        </View>
+      )}
+
+      {/* Error banner */}
+      {errorMsg !== '' && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{errorMsg}</Text>
+          <TouchableOpacity onPress={() => setErrorMsg('')}>
+            <Text style={styles.errorDismiss}>Dismiss</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Controls */}
+      <View style={styles.controls}>
+        <TouchableOpacity
+          style={[styles.captureButton, isRecording && styles.captureButtonRecording]}
+          onPress={runSequence}
+          disabled={isRecording || countdown !== null || isProcessing}
+        >
+          <View style={[styles.captureInner, isRecording && styles.captureInnerRecording]} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.button}
+          onPress={toggleCameraFacing}
+          disabled={isRecording || isProcessing}
+        >
+          <Text style={styles.text}>{isFront ? '← Back' : 'Front →'}</Text>
+        </TouchableOpacity>
+
+        <View style={styles.button}>
+          <Text style={styles.text}>{isFront ? 'Screen Flash' : 'LED Flash'}</Text>
+        </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center' },
-  message: { textAlign: 'center', paddingBottom: 10 },
-  camera: { flex: 1 },
+  container: { flex: 1, backgroundColor: 'black' },
+  permissionContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  message: { textAlign: 'center', paddingBottom: 16, fontSize: 16 },
+  camera: { ...StyleSheet.absoluteFillObject },
+  screenFlash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'white',
+  },
   controls: {
     position: 'absolute',
     bottom: 40,
@@ -158,7 +251,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     borderRadius: 8,
   },
-  text: { color: 'white', fontSize: 16 },
+  text: { color: 'white', fontSize: 14 },
   captureButton: {
     width: 70,
     height: 70,
@@ -167,9 +260,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  captureButtonRecording: {
-    backgroundColor: 'red',
-  },
+  captureButtonRecording: { backgroundColor: 'red' },
   captureInner: {
     width: 60,
     height: 60,
@@ -185,20 +276,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
   },
   countdownContainer: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
-  countdownText: {
-    fontSize: 120,
-    fontWeight: 'bold',
-    color: 'white',
-  },
+  countdownText: { fontSize: 120, fontWeight: 'bold', color: 'white' },
   recordingIndicator: {
     position: 'absolute',
-    top: 40,
+    top: 60,
     left: 20,
     flexDirection: 'row',
     alignItems: 'center',
@@ -216,11 +302,30 @@ const styles = StyleSheet.create({
   recordingText: { color: 'white', fontWeight: 'bold' },
   statusContainer: {
     position: 'absolute',
-    top: 40,
+    top: 60,
     right: 20,
     backgroundColor: 'rgba(0,0,0,0.5)',
     padding: 8,
     borderRadius: 8,
   },
   statusText: { color: 'white', fontWeight: 'bold' },
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  processingText: { color: 'white', fontSize: 18, marginTop: 16, fontWeight: 'bold' },
+  errorContainer: {
+    position: 'absolute',
+    top: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(200,0,0,0.9)',
+    padding: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  errorText: { color: 'white', fontSize: 14, textAlign: 'center', marginBottom: 8 },
+  errorDismiss: { color: 'white', fontWeight: 'bold', fontSize: 16, textDecorationLine: 'underline' },
 });

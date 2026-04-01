@@ -1,50 +1,64 @@
-# Welcome to your Expo app 👋
+# Ocular Pupillometry App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Mobile app for measuring pupil dilation response using visible light stimulation. The app records an eye video with a controlled flash sequence, uploads it to a Python analysis server, and displays results (latency, percent change, min/max pupil diameter).
 
-## Get started
+## Architecture
 
-1. Install dependencies
+- **Frontend**: Expo (React Native) app with camera recording and results display
+- **Backend**: FastAPI server wrapping a Python pupillometry pipeline (FFT-based image registration + Fourier-Mellin correlation for dilation estimation)
+- **MATLAB reference**: `backend/reflexBetaStandAlone.m` contains the original MATLAB implementation
 
-   ```bash
-   npm install
-   ```
+## Quick Start
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+### 1. Start the backend server
 
 ```bash
-npm run reset-project
+cd backend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python3 -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+The API will be available at `http://localhost:8000`. Visit `http://localhost:8000/docs` for interactive API docs.
+
+### 2. Start the mobile app
+
+```bash
+npm install
+npx expo start
+```
+
+Open in Expo Go, iOS Simulator, or Android Emulator.
+
+### 3. Usage
+
+1. Enter a Subject ID and select Left/Right eye on the home screen
+2. Tap **Open Camera** and press the record button
+3. The app runs an automated flash sequence (3s on, 3s off, 0.25s on, off)
+4. After recording, the video is uploaded to the backend for analysis
+5. Results appear on the output screen: latency, percent change, min/max pupil diameter
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | Health check |
+| POST | `/api/analyze` | Upload video for analysis (multipart form: `video`, `subject_id`, `eye`, `engine`) |
+
+## Backend Python Package
+
+The analysis pipeline lives in `backend/python/`:
+
+| Module | Purpose |
+|--------|---------|
+| `pipeline.py` | Main analysis pipeline (`analyze_video()`) |
+| `apod_windows.py` | 2D Gaussian and Hanning apodization windows |
+| `sub_pixel_fit.py` | Sub-pixel peak fitting for correlation planes |
+| `coordinate_tform.py` | Coordinate transforms, log-polar grids, image warping |
+| `correlation.py` | SCC (translation) and FMC (scale) correlation functions |
 
 ## Learn more
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- [Expo documentation](https://docs.expo.dev/)
+- [FastAPI documentation](https://fastapi.tiangolo.com/)

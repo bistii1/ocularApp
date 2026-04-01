@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.ocular-app"
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +20,12 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.anonymous.ocular_app"
     },
     "web": {
       "output": "static",
@@ -42,13 +48,9 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow ocular_app to access your camera."
-        }
-      ],
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Allow ocular_app to access your camera."
+          "cameraPermission": "Allow ocular_app to access your camera.",
+          "microphonePermission": "Allow ocular_app to record audio with video.",
+          "recordAudioAndroid": true
         }
       ]
     ],
