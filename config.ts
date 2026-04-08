@@ -53,10 +53,15 @@ export interface AnalysisResult {
   // Velocity
   avg_constriction_velocity: number;
   avg_dilation_velocity: number;
+  avg_constriction_velocity_pct_s: number;
+  avg_dilation_velocity_pct_s: number;
+  velocity_units: string;
   // Diameter
   min_pupil_diameter_mm: number;
   max_pupil_diameter_mm: number;
   baseline_pupil_diameter_mm: number;
+  baseline_stability_pct: number;
+  signal_dynamic_pct: number;
   // Processing info
   n_frames: number;
   fps: number;
@@ -75,6 +80,11 @@ export interface AnalysisResult {
   quality_score: number;
   quality_label: string;
   quality_flags: string[];
+  validation_score: number;
+  is_plr_usable: boolean;
+  plr_verdict: string;
+  validation_warnings: string[];
+  validation_failures: string[];
 }
 
 export async function analyzeVideo(

@@ -43,6 +43,21 @@ export default function TestOutputScreen() {
   const subjectId = params.subjectId || stored?.subjectId || result?.subject_id || '';
   const eye = params.eye || stored?.eye || result?.eye || '';
 
+  const validationScore = result?.validation_score ?? 0;
+  const isPlrUsable = result?.is_plr_usable ?? false;
+  const plrVerdict = result?.plr_verdict ?? 'not_usable';
+  const validationWarnings = result?.validation_warnings ?? [];
+  const validationFailures = result?.validation_failures ?? [];
+
+  const velocityUnits = result?.velocity_units ?? '%/fr';
+  const avgConstrictionVelocityDisplay =
+    result?.avg_constriction_velocity_pct_s ?? result?.avg_constriction_velocity ?? 0;
+  const avgDilationVelocityDisplay =
+    result?.avg_dilation_velocity_pct_s ?? result?.avg_dilation_velocity ?? 0;
+
+  const baselineStabilityPct = result?.baseline_stability_pct ?? 0;
+  const signalDynamicPct = result?.signal_dynamic_pct ?? 0;
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -60,6 +75,23 @@ export default function TestOutputScreen() {
 
       {result ? (
         <ScrollView style={styles.scrollBody} contentContainerStyle={styles.scrollContent}>
+          {/* PLR Verdict */}
+          <SectionCard title="PLR Interpretation">
+            <ResultRow label="Verdict" value={isPlrUsable ? 'Usable' : 'Not usable'} />
+            <ResultRow label="Validation Score" value={`${validationScore.toFixed(1)} / 100`} />
+            <ResultRow label="Decision" value={plrVerdict.replace(/_/g, ' ')} />
+            {validationFailures.length > 0 && (
+              <Text style={styles.validationFailureText}>
+                Failures: {validationFailures.join(', ')}
+              </Text>
+            )}
+            {validationWarnings.length > 0 && (
+              <Text style={styles.validationWarnText}>
+                Warnings: {validationWarnings.join(', ')}
+              </Text>
+            )}
+          </SectionCard>
+
           {/* Timing Section */}
           <SectionCard title="Timing">
             <ResultRow label="Onset / Latency" value={`${result.onset_time_s.toFixed(3)} s`} />
@@ -78,8 +110,8 @@ export default function TestOutputScreen() {
 
           {/* Velocity Section */}
           <SectionCard title="Velocity">
-            <ResultRow label="Avg Constriction Vel." value={`${result.avg_constriction_velocity.toFixed(3)} %/fr`} />
-            <ResultRow label="Avg Dilation Vel." value={`${result.avg_dilation_velocity.toFixed(3)} %/fr`} />
+            <ResultRow label="Avg Constriction Vel." value={`${avgConstrictionVelocityDisplay.toFixed(3)} ${velocityUnits}`} />
+            <ResultRow label="Avg Dilation Vel." value={`${avgDilationVelocityDisplay.toFixed(3)} ${velocityUnits}`} />
           </SectionCard>
 
           {/* Pupil Diameter Section */}
@@ -87,6 +119,8 @@ export default function TestOutputScreen() {
             <ResultRow label="Baseline (est.)" value={`${result.baseline_pupil_diameter_mm.toFixed(1)} mm`} />
             <ResultRow label="Minimum" value={`${result.min_pupil_diameter_mm.toFixed(2)} mm`} />
             <ResultRow label="Maximum" value={`${result.max_pupil_diameter_mm.toFixed(2)} mm`} />
+            <ResultRow label="Baseline Stability" value={`${baselineStabilityPct.toFixed(2)}%`} />
+            <ResultRow label="Signal Dynamic Range" value={`${signalDynamicPct.toFixed(2)}%`} />
           </SectionCard>
 
           {/* Dilation Sparkline */}
@@ -296,6 +330,8 @@ const styles = StyleSheet.create({
   },
   sparkLabel: { fontSize: 11, color: '#999' },
   qualityHintText: { fontSize: 12, color: '#666', marginTop: 10, lineHeight: 17 },
+  validationWarnText: { fontSize: 12, color: '#7b5e00', marginTop: 8, lineHeight: 17 },
+  validationFailureText: { fontSize: 12, color: '#9e1b1b', marginTop: 8, lineHeight: 17, fontWeight: '600' },
   noResults: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
   noResultsText: { fontSize: 16, color: '#999', textAlign: 'center' },
   actions: { alignItems: 'center', marginTop: 20, marginBottom: 20 },

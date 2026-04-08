@@ -15,6 +15,7 @@ from scipy.ndimage import median_filter
 from .apod_windows import gaussian_window_filter, hanning_window
 from .sub_pixel_fit import sub_pix_3pt_fit
 from .coordinate_tform import log_polar_coordinates, pol2cart
+from .plr_validation import evaluate_plr_result
 
 logger = logging.getLogger(__name__)
 
@@ -575,11 +576,22 @@ def _compute_metrics(disp_s_inst, t_vect, win_size, fps):
     recovery_end = min(len(velocity_pct), int(recovery_time * fps)) if recovery_time else len(velocity_pct)
     avg_dilation_vel = float(np.mean(velocity_pct[constrict_idx + 1:recovery_end])) if recovery_end > constrict_idx + 1 else 0.0
 
+    # Convert to per-second units for interpretation.
+    avg_constriction_vel_pct_s = avg_constriction_vel * fps
+    avg_dilation_vel_pct_s = avg_dilation_vel * fps
+
     # --- Diameter estimates ---
     min_ratio = float(np.nanmin(dilation_ratio))
     max_ratio = float(np.nanmax(dilation_ratio))
     min_diameter = min_ratio * approx_pupil_mm
     max_diameter = max_ratio * approx_pupil_mm
+
+    baseline_window = min(len(dilation_ratio), max(5, int(0.5 * fps)))
+    baseline_slice = dilation_ratio[:baseline_window]
+    baseline_mean = float(np.nanmean(baseline_slice)) if baseline_slice.size else 0.0
+    baseline_std = float(np.nanstd(baseline_slice)) if baseline_slice.size else 0.0
+    baseline_stability_pct = (baseline_std / max(abs(baseline_mean), 1e-6)) * 100
+    signal_dynamic_pct = abs(1.0 - min_ratio) * 100
 
     quality_score, quality_label, quality_flags = _compute_quality(
         dilation_ratio=dilation_ratio,
@@ -590,7 +602,7 @@ def _compute_metrics(disp_s_inst, t_vect, win_size, fps):
         max_constriction_ratio=max_constriction_ratio,
     )
 
-    return {
+    result = {
         # Timing metrics
         "onset_time_s": round(onset_time, 3),
         "peak_constriction_time_s": round(peak_constriction_time, 3),
@@ -601,10 +613,15 @@ def _compute_metrics(disp_s_inst, t_vect, win_size, fps):
         # Velocity metrics
         "avg_constriction_velocity": round(avg_constriction_vel, 3),
         "avg_dilation_velocity": round(avg_dilation_vel, 3),
+        "avg_constriction_velocity_pct_s": round(avg_constriction_vel_pct_s, 3),
+        "avg_dilation_velocity_pct_s": round(avg_dilation_vel_pct_s, 3),
+        "velocity_units": "%/s",
         # Diameter estimates
         "min_pupil_diameter_mm": round(min_diameter, 2),
         "max_pupil_diameter_mm": round(max_diameter, 2),
         "baseline_pupil_diameter_mm": approx_pupil_mm,
+        "baseline_stability_pct": round(baseline_stability_pct, 2),
+        "signal_dynamic_pct": round(signal_dynamic_pct, 2),
         # Processing info
         "n_frames": len(t_vect),
         "fps": round(fps, 1),
@@ -620,6 +637,9 @@ def _compute_metrics(disp_s_inst, t_vect, win_size, fps):
         "quality_label": quality_label,
         "quality_flags": quality_flags,
     }
+
+    result.update(evaluate_plr_result(result))
+    return result
 
 
 def _compute_quality(dilation_ratio, velocity_pct, t_vect,
@@ -676,11 +696,18 @@ def _compute_quality(dilation_ratio, velocity_pct, t_vect,
 
 def _find_onset(dilation_vel, fps):
     """Find the onset index where dilation velocity first exceeds threshold."""
-    threshold = np.std(dilation_vel[:max(5, int(0.5 * fps))]) * 2
+    baseline_window = max(5, int(0.7 * fps))
+    baseline_window = min(baseline_window, len(dilation_vel))
+    threshold = np.std(dilation_vel[:baseline_window]) * 2.5
     if threshold < 1e-6:
         threshold = 0.01
 
-    for i in range(len(dilation_vel)):
+    for i in range(baseline_window, len(dilation_vel)):
         if abs(dilation_vel[i]) > threshold:
             return max(0, i - 1)
+
+    for i in range(len(dilation_vel)):
+        if abs(dilation_vel[i]) > threshold * 1.5:
+            return max(0, i - 1)
+
     return None

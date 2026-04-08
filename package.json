@@ -5,6 +5,7 @@
   "scripts": {
     "start": "expo start",
     "backend": "./scripts/start-backend.sh",
+    "backend:validate": "cd backend && python3 scripts/validate_backend.py",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",

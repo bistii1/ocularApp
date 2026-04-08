@@ -46,10 +46,15 @@ class AnalysisResult(BaseModel):
     # Velocity
     avg_constriction_velocity: float
     avg_dilation_velocity: float
+    avg_constriction_velocity_pct_s: float
+    avg_dilation_velocity_pct_s: float
+    velocity_units: str
     # Diameter
     min_pupil_diameter_mm: float
     max_pupil_diameter_mm: float
     baseline_pupil_diameter_mm: float
+    baseline_stability_pct: float
+    signal_dynamic_pct: float
     # Processing info
     n_frames: int
     fps: float
@@ -67,6 +72,11 @@ class AnalysisResult(BaseModel):
     quality_score: float = 0.0
     quality_label: str = "unreliable"
     quality_flags: List[str] = Field(default_factory=list)
+    validation_score: float = 0.0
+    is_plr_usable: bool = False
+    plr_verdict: str = "not_usable"
+    validation_warnings: List[str] = Field(default_factory=list)
+    validation_failures: List[str] = Field(default_factory=list)
 
 
 def _validate_analysis_payload(result: dict):
