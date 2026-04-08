@@ -1,11 +1,46 @@
-/**
- * Change this to your computer's local IP if testing on a physical device.
- * Run `ifconfig | grep "inet "` on your Mac to find it.
- * Use 'localhost' only for iOS Simulator.
- */
-const SERVER_IP = '10.186.191.98';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-export const API_BASE_URL = `http://${SERVER_IP}:8000`;
+/**
+ * Configure API URL in this order:
+ * 1) EXPO_PUBLIC_API_BASE_URL (recommended)
+ * 2) Expo debugger host (for LAN testing)
+ * 3) Emulator/simulator sensible defaults
+ */
+function resolveApiBaseUrl() {
+  const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+  if (envUrl) return envUrl.replace(/\/$/, '');
+
+  const hostUri =
+    (Constants.expoConfig as any)?.hostUri ||
+    (Constants.manifest2 as any)?.extra?.expoGo?.debuggerHost ||
+    (Constants.manifest as any)?.debuggerHost ||
+    '';
+
+  if (typeof hostUri === 'string' && hostUri.length > 0) {
+    const host = hostUri.split(':')[0];
+    if (host) return `http://${host}:8000`;
+  }
+
+  if (Platform.OS === 'android') return 'http://10.0.2.2:8000';
+  return 'http://localhost:8000';
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
+
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export interface AnalysisResult {
   // Timing
@@ -36,6 +71,10 @@ export interface AnalysisResult {
   subject_id: string | null;
   eye: string | null;
   engine: string;
+  // Quality
+  quality_score: number;
+  quality_label: string;
+  quality_flags: string[];
 }
 
 export async function analyzeVideo(
@@ -57,10 +96,31 @@ export async function analyzeVideo(
   if (eye) formData.append('eye', eye);
   formData.append('engine', engine);
 
-  const response = await fetch(`${API_BASE_URL}/api/analyze`, {
-    method: 'POST',
-    body: formData,
-  });
+  // Quick preflight to surface unreachable backend errors early.
+  try {
+    await fetchWithTimeout(`${API_BASE_URL}/api/health`, { method: 'GET' }, 5000);
+  } catch {
+    throw new Error(
+      `Cannot reach backend at ${API_BASE_URL}. Start the backend and set EXPO_PUBLIC_API_BASE_URL if needed.`
+    );
+  }
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      `${API_BASE_URL}/api/analyze`,
+      {
+        method: 'POST',
+        body: formData,
+      },
+      240000,
+    );
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Analysis timed out after 240s. Try a shorter/clearer recording.');
+    }
+    throw new Error(`Network request failed to ${API_BASE_URL}: ${error?.message || 'Unknown error'}`);
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));

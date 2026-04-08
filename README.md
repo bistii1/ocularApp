@@ -12,6 +12,14 @@ Mobile app for measuring pupil dilation response using visible light stimulation
 
 ### 1. Start the backend server
 
+One command (recommended):
+
+```bash
+npm run backend
+```
+
+This script auto-creates `backend/venv`, installs `backend/requirements.txt` when needed, and starts uvicorn.
+
 ```bash
 cd backend
 python3 -m venv venv
@@ -29,6 +37,17 @@ npm install
 npx expo start
 ```
 
+Set the backend URL for the app (recommended):
+
+```bash
+export EXPO_PUBLIC_API_BASE_URL=http://<YOUR_MAC_LAN_IP>:8000
+```
+
+Examples:
+- iOS Simulator: `http://localhost:8000`
+- Android Emulator: `http://10.0.2.2:8000`
+- Physical phone on same Wi-Fi: `http://<your-mac-ip>:8000`
+
 Open in Expo Go, iOS Simulator, or Android Emulator.
 
 ### 3. Usage
@@ -45,6 +64,20 @@ Open in Expo Go, iOS Simulator, or Android Emulator.
 |--------|------|-------------|
 | GET | `/api/health` | Health check |
 | POST | `/api/analyze` | Upload video for analysis (multipart form: `video`, `subject_id`, `eye`, `engine`) |
+
+## Timeout Troubleshooting
+
+If the app shows `analysis failed` or `network request timed out`:
+
+1. Verify backend is reachable from your phone/computer:
+
+```bash
+curl http://<YOUR_MAC_LAN_IP>:8000/api/health
+```
+
+2. Confirm `EXPO_PUBLIC_API_BASE_URL` points to the same host you used in `curl`.
+3. Keep recordings short (the server now caps and samples frames for faster analysis).
+4. Ensure frontend and backend are on the same network and no VPN/firewall is blocking port `8000`.
 
 ## Backend Python Package
 

@@ -1,5 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { getLastAnalysisResult, getLastAnalysisResultSync, type StoredAnalysisResult } from "../analysisResultStore";
 import type { AnalysisResult } from "../config";
 
 export default function TestOutputScreen() {
@@ -10,25 +12,47 @@ export default function TestOutputScreen() {
     eye?: string;
   }>();
 
-  let result: AnalysisResult | null = null;
-  try {
-    if (params.resultJson) {
-      result = JSON.parse(params.resultJson);
+  const [stored, setStored] = useState<StoredAnalysisResult | null>(getLastAnalysisResultSync());
+
+  useEffect(() => {
+    let mounted = true;
+
+    getLastAnalysisResult().then(value => {
+      if (mounted) setStored(value);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const result = useMemo<AnalysisResult | null>(() => {
+    if (stored?.result) return stored.result;
+
+    try {
+      if (params.resultJson) {
+        return JSON.parse(params.resultJson);
+      }
+    } catch {
+      return null;
     }
-  } catch {
-    result = null;
-  }
+
+    return null;
+  }, [params.resultJson, stored]);
+
+  const subjectId = params.subjectId || stored?.subjectId || result?.subject_id || '';
+  const eye = params.eye || stored?.eye || result?.eye || '';
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Pupil Analysis Results</Text>
-        {(params.subjectId || params.eye) && (
+        {(subjectId || eye) && (
           <Text style={styles.subtitle}>
-            {params.subjectId ? `Subject: ${params.subjectId}` : ''}
-            {params.subjectId && params.eye ? ' | ' : ''}
-            {params.eye ? `Eye: ${params.eye}` : ''}
+            {subjectId ? `Subject: ${subjectId}` : ''}
+            {subjectId && eye ? ' | ' : ''}
+            {eye ? `Eye: ${eye}` : ''}
             {result ? ` | Engine: ${result.engine}` : ''}
           </Text>
         )}
@@ -80,6 +104,19 @@ export default function TestOutputScreen() {
             <ResultRow label="Duration" value={`${result.analysis_duration_s.toFixed(2)} s`} />
           </SectionCard>
 
+          {/* Quality Section */}
+          <SectionCard title="Quality">
+            <ResultRow label="Confidence Score" value={`${result.quality_score.toFixed(1)} / 100`} />
+            <ResultRow label="Confidence Label" value={result.quality_label} />
+            <ResultRow
+              label="Flags"
+              value={result.quality_flags.length > 0 ? result.quality_flags.join(', ') : 'none'}
+            />
+            {result.quality_flags.length > 0 && (
+              <Text style={styles.qualityHintText}>{qualityHintFromFlags(result.quality_flags)}</Text>
+            )}
+          </SectionCard>
+
           {/* Actions */}
           <View style={styles.actions}>
             <TouchableOpacity onPress={() => router.push('/')} style={styles.completeButton}>
@@ -125,20 +162,25 @@ function ResultRow({ label, value }: { label: string; value: string }) {
 }
 
 function Sparkline({ data, times }: { data: number[]; times: number[] }) {
-  if (!data || data.length === 0) return <Text style={styles.noResultsText}>No data</Text>;
+  const cleanData = (data || []).filter(v => Number.isFinite(v));
+  const cleanTimes = (times || []).filter(v => Number.isFinite(v));
 
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const barCount = Math.min(data.length, 40);
-  const step = Math.max(1, Math.floor(data.length / barCount));
-  const sampled: number[] = [];
-  for (let i = 0; i < data.length; i += step) {
-    sampled.push(data[i]);
+  if (cleanData.length === 0) {
+    return <Text style={styles.noResultsText}>No valid graph data from analysis.</Text>;
   }
 
-  const tStart = times.length > 0 ? times[0].toFixed(1) : '0';
-  const tEnd = times.length > 0 ? times[times.length - 1].toFixed(1) : '?';
+  const min = Math.min(...cleanData);
+  const max = Math.max(...cleanData);
+  const range = max - min || 1;
+  const barCount = Math.min(cleanData.length, 40);
+  const step = Math.max(1, Math.floor(cleanData.length / barCount));
+  const sampled: number[] = [];
+  for (let i = 0; i < cleanData.length; i += step) {
+    sampled.push(cleanData[i]);
+  }
+
+  const tStart = cleanTimes.length > 0 ? cleanTimes[0].toFixed(1) : '0';
+  const tEnd = cleanTimes.length > 0 ? cleanTimes[cleanTimes.length - 1].toFixed(1) : '?';
 
   return (
     <View>
@@ -159,6 +201,31 @@ function Sparkline({ data, times }: { data: number[]; times: number[] }) {
       </View>
     </View>
   );
+}
+
+function qualityHintFromFlags(flags: string[]) {
+  const hints: string[] = [];
+
+  if (flags.includes('flat_signal')) {
+    hints.push('Use brighter, direct eye lighting and keep the eye centered/filling more of the frame.');
+  }
+  if (flags.includes('weak_constriction')) {
+    hints.push('Increase stimulus contrast and avoid ambient light changes during recording.');
+  }
+  if (flags.includes('implausible_timing')) {
+    hints.push('Hold the phone steady and keep eyelids open through the full flash sequence.');
+  }
+  if (flags.includes('low_frame_count')) {
+    hints.push('Record a full-length trial and avoid early stop/cancel.');
+  }
+  if (flags.includes('noisy_velocity')) {
+    hints.push('Reduce motion blur by stabilizing device and minimizing subject movement.');
+  }
+
+  if (hints.length === 0) {
+    return 'No issues detected.';
+  }
+  return hints.join(' ');
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +295,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   sparkLabel: { fontSize: 11, color: '#999' },
+  qualityHintText: { fontSize: 12, color: '#666', marginTop: 10, lineHeight: 17 },
   noResults: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
   noResultsText: { fontSize: 16, color: '#999', textAlign: 'center' },
   actions: { alignItems: 'center', marginTop: 20, marginBottom: 20 },

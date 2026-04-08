@@ -6,6 +6,13 @@ import numpy as np
 from scipy.signal import windows
 
 
+def _integrate_trapezoid(y, x):
+    """Use NumPy trapezoidal integration across NumPy versions."""
+    if hasattr(np, 'trapezoid'):
+        return np.trapezoid(y, x)
+    return np.trapz(y, x)
+
+
 def gauss_window(size, sigma):
     """2D Gaussian apodization window."""
     gauss_x = windows.gaussian(size[1], std=sigma * size[1], sym=True)
@@ -56,7 +63,7 @@ def _find_gaussian_width(image_size, window_size):
     std = 50 * window_size
     domain = np.arange(-image_size / 2, image_size / 2 + 1)
     gauss = np.exp(-(domain ** 2) / (2 * std ** 2))
-    area = np.trapezoid(gauss, domain)
+    area = _integrate_trapezoid(gauss, domain)
 
     if window_size >= area:
         return std
@@ -72,7 +79,7 @@ def _find_gaussian_width(image_size, window_size):
             smax = smin + (smax - smin) / 2
         std = smin + (smax - smin) / 2
         gauss = np.exp(-(domain ** 2) / (2 * std ** 2))
-        area = np.trapezoid(gauss, domain)
+        area = _integrate_trapezoid(gauss, domain)
         err = abs(1 - area / window_size)
 
     return std

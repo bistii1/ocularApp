@@ -33,7 +33,7 @@ def analyze_video(video_path: str, fps_override: float = None) -> dict:
         dilation_time_series, time_vector
     """
     logger.info("Loading video: %s", video_path)
-    frames, fps = _load_and_filter_video(video_path, fps_override)
+    frames, fps = _load_and_filter_video(video_path, fps_override, max_frames=90)
     n_frames = frames.shape[3]
     logger.info("Loaded %d frames at %.1f fps", n_frames, fps)
 
@@ -83,7 +83,7 @@ def analyze_video(video_path: str, fps_override: float = None) -> dict:
 # Video loading
 # ============================================================================
 
-def _load_and_filter_video(video_path: str, fps_override: float = None):
+def _load_and_filter_video(video_path: str, fps_override: float = None, max_frames: int = 90):
     """Load video, trim to analysis window, remove over-bright frames."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -125,6 +125,13 @@ def _load_and_filter_video(video_path: str, fps_override: float = None):
                 good[bi + 1] = False
 
     video = video[:, :, :, good]
+
+    # Keep runtime bounded for mobile-server roundtrips by sampling frames.
+    n_kept = video.shape[3]
+    if n_kept > max_frames:
+        idx = np.linspace(0, n_kept - 1, max_frames).astype(int)
+        video = video[:, :, :, idx]
+
     return video, fps
 
 
@@ -172,7 +179,7 @@ def _register_frames(gray_frames, rescale):
         cur_img = gray_frames[:, :, k]
         dx, dy, ds, da, _ = _statistical_register(
             ref_img, cur_img, spt_window, fmc_window,
-            h, w, min_rad, max_rad, x_lp, y_lp, 1e-4, 100
+            h, w, min_rad, max_rad, x_lp, y_lp, 1e-4, 60
         )
         disp_x[k] = dx
         disp_y[k] = dy
@@ -432,7 +439,7 @@ def _estimate_dilation(registered, xcent, ycent, win_size, fps):
         ds = _dilation_correlate(
             ref_proc, cur_proc, spt_win, fmc_win,
             x_lp, y_lp, dilate_min_rad, dilate_max_rad,
-            actual_w, 1e-5, 250
+            actual_w, 1e-5, 80
         )
         disp_s[k] = ds / 2.0  # pair-wise: divide by 2 frame steps
 
@@ -574,6 +581,15 @@ def _compute_metrics(disp_s_inst, t_vect, win_size, fps):
     min_diameter = min_ratio * approx_pupil_mm
     max_diameter = max_ratio * approx_pupil_mm
 
+    quality_score, quality_label, quality_flags = _compute_quality(
+        dilation_ratio=dilation_ratio,
+        velocity_pct=velocity_pct,
+        t_vect=t_vect,
+        onset_time=onset_time,
+        peak_constriction_time=peak_constriction_time,
+        max_constriction_ratio=max_constriction_ratio,
+    )
+
     return {
         # Timing metrics
         "onset_time_s": round(onset_time, 3),
@@ -599,7 +615,63 @@ def _compute_metrics(disp_s_inst, t_vect, win_size, fps):
         "dilation_time_series": dilation_ratio.tolist(),
         "velocity_time_series": velocity_pct.tolist(),
         "time_vector": t_vect.tolist(),
+        # Quality
+        "quality_score": quality_score,
+        "quality_label": quality_label,
+        "quality_flags": quality_flags,
     }
+
+
+def _compute_quality(dilation_ratio, velocity_pct, t_vect,
+                     onset_time, peak_constriction_time, max_constriction_ratio):
+    """Derive a heuristic quality/confidence score from signal and timing behavior."""
+    score = 100.0
+    flags = []
+
+    if len(t_vect) < 25:
+        score -= 25
+        flags.append("low_frame_count")
+
+    finite_ratio = np.asarray(dilation_ratio, dtype=float)
+    finite_vel = np.asarray(velocity_pct, dtype=float)
+
+    if not np.all(np.isfinite(finite_ratio)) or not np.all(np.isfinite(finite_vel)):
+        score -= 40
+        flags.append("non_finite_signal")
+
+    ratio_std = float(np.nanstd(finite_ratio)) if finite_ratio.size else 0.0
+    if ratio_std < 0.003:
+        score -= 20
+        flags.append("flat_signal")
+
+    if max_constriction_ratio < 0.75:
+        score -= 15
+        flags.append("weak_constriction")
+
+    vel_noise = float(np.nanmedian(np.abs(np.diff(finite_vel)))) if finite_vel.size > 1 else 0.0
+    if vel_noise > 1.5:
+        score -= 20
+        flags.append("noisy_velocity")
+
+    # Timing is only meaningful if there is visible constriction and non-flat signal.
+    has_meaningful_response = max_constriction_ratio >= 0.75 and ratio_std >= 0.003
+    if has_meaningful_response and peak_constriction_time <= onset_time:
+        score -= 20
+        flags.append("implausible_timing")
+
+    score = float(np.clip(score, 0.0, 100.0))
+    if score >= 85:
+        label = "excellent"
+    elif score >= 70:
+        label = "good"
+    elif score >= 50:
+        label = "fair"
+    elif score >= 30:
+        label = "poor"
+    else:
+        label = "unreliable"
+
+    return round(score, 1), label, flags
 
 
 def _find_onset(dilation_vel, fps):

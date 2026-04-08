@@ -8,10 +8,14 @@ import uuid
 import shutil
 import logging
 import tempfile
+import asyncio
+import time
+import math
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field
 from typing import Optional, List
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -60,6 +64,26 @@ class AnalysisResult(BaseModel):
     subject_id: Optional[str] = None
     eye: Optional[str] = None
     engine: str = "python"
+    quality_score: float = 0.0
+    quality_label: str = "unreliable"
+    quality_flags: List[str] = Field(default_factory=list)
+
+
+def _validate_analysis_payload(result: dict):
+    required_series = ["dilation_time_series", "velocity_time_series", "time_vector"]
+    for key in required_series:
+        values = result.get(key)
+        if not isinstance(values, list) or len(values) == 0:
+            raise ValueError(f"Invalid analysis output: '{key}' is empty")
+        finite_values = [v for v in values if isinstance(v, (int, float)) and math.isfinite(v)]
+        if len(finite_values) == 0:
+            raise ValueError(f"Invalid analysis output: '{key}' has no finite values")
+
+    n = len(result.get("time_vector", []))
+    if len(result.get("dilation_time_series", [])) != n:
+        raise ValueError("Invalid analysis output: dilation/time vector length mismatch")
+    if len(result.get("velocity_time_series", [])) != n:
+        raise ValueError("Invalid analysis output: velocity/time vector length mismatch")
 
 
 @app.get("/api/health")
@@ -81,6 +105,7 @@ async def analyze(
     tmp_dir = tempfile.mkdtemp(prefix="ocular_")
     ext = os.path.splitext(video.filename or "video.mp4")[1] or ".mp4"
     tmp_path = os.path.join(tmp_dir, f"{uuid.uuid4()}{ext}")
+    start_time = time.perf_counter()
 
     try:
         with open(tmp_path, "wb") as f:
@@ -95,10 +120,29 @@ async def analyze(
                 detail="MATLAB engine not yet implemented. Use engine=python."
             )
 
-        result = analyze_video(tmp_path)
+        try:
+            result = await asyncio.wait_for(
+                run_in_threadpool(analyze_video, tmp_path),
+                timeout=180,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail="Analysis timed out on the server (180s). Try a shorter recording."
+            )
+
         result["subject_id"] = subject_id
         result["eye"] = eye
         result["engine"] = engine
+        _validate_analysis_payload(result)
+
+        elapsed = time.perf_counter() - start_time
+        logger.info(
+            "Analysis completed in %.2fs (frames=%s, series_len=%s)",
+            elapsed,
+            result.get("n_frames"),
+            len(result.get("time_vector", [])),
+        )
 
         return AnalysisResult(**result)
 

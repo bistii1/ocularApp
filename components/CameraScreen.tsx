@@ -2,6 +2,7 @@ import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions 
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Button, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { setLastAnalysisResult } from '../analysisResultStore';
 import { analyzeVideo } from '../config';
 
 export default function CameraScreen() {
@@ -125,12 +126,16 @@ export default function CameraScreen() {
 
     try {
       const result = await analyzeVideo(uri, params.subjectId, params.eye);
+      await setLastAnalysisResult({
+        result,
+        subjectId: params.subjectId,
+        eye: params.eye,
+      });
       router.replace({
         pathname: '/testOutput',
         params: {
-          resultJson: JSON.stringify(result),
-          subjectId: params.subjectId || '',
-          eye: params.eye || '',
+          subjectId: params.subjectId || result.subject_id || '',
+          eye: params.eye || result.eye || '',
         },
       });
     } catch (error: any) {
